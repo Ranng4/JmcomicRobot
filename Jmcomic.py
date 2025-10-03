@@ -5,9 +5,12 @@ import jmcomic
 import requests
 from PIL import Image
 import shutil
+from dotenv import load_dotenv
+import base64
 
 PDF_DIR = './pdf'
 BASE_DIR = './comic'
+HTTP_SERVER_ADD = 'http://47.122.117.204:3000'
 
 
 def pngs_to_pdf(png_dir, output_pdf_dir, output_pdf_name):
@@ -38,8 +41,68 @@ def removeCache(album_id):
     shutil.rmtree(comic_path)
     
 
-def send_pdf_via_http(group_id, pdf_path):
-    url = "http://47.122.117.204:3000/upload_group_file"
+def send_pdf_via_http(group_id, album_id):
+    pdf_path = os.path.join(PDF_DIR,f"{album_id}.pdf")
+    with open(pdf_path, "rb") as f:
+        encoded_file = base64.b64encode(f.read()).decode('utf-8')
+    token = os.getenv("http_server_token")
+    url = HTTP_SERVER_ADD.rstrip() + '/send_group_msg'
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
+    data = {
+        "group_id": group_id,
+        "message": [
+            {
+                 "type": "file",
+                 "data":{
+                            "file": encoded_file
+                        }
+            }
+        ]
+    }
+ 
+    try:
+        response = requests.post(url, json=data, headers=headers)
+        response.raise_for_status()
+        print(f"文件发送成功: {response.text}")
+        return response.json()
+    except Exception as e:
+        print(f"文件发送失败: {e}")
+        return None
+    
+    
+
+    
+def send_group_text_message(group_id: str, content: str):
+    
+    token = os.getenv("http_server_token")
+    url = HTTP_SERVER_ADD.rstrip('/') + '/send_group_msg'
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
+    data = {
+        "group_id": group_id,
+        "message": [
+            {
+                 "type": "text",
+                 "data":{
+                            "text": content
+                        }
+            }
+        ]
+    }
+ 
+    try:
+        response = requests.post(url, json=data, headers=headers)
+        response.raise_for_status()
+        print(f"消息发送成功: {response.text}")
+        return response.json()
+    except Exception as e:
+        print(f"消息发送失败: {e}")
+        return None
+    
+
 
 def on_message(ws, message):
     print("收到消息:", message)
@@ -85,6 +148,9 @@ def run_ws():
 
 
 if __name__ == "__main__":
-    download_album_to_pdf(432232)
-    removeCache(432232)
+    load_dotenv()
+    # send_group_text_message("779220091","sadad")
+    # download_album_to_pdf(432232)
+    send_pdf_via_http("779220091","432232")
+    # removeCache(432232)
     run_ws()
