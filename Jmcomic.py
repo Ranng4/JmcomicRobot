@@ -13,6 +13,7 @@ import io
 PDF_DIR = './pdf'
 BASE_DIR = './comic'
 HTTP_SERVER_ADD = 'http://47.122.117.204:3000'
+FILE_SERVER = 'http://47.122.117.204:8080'
 QQ = '2107576525'
 
 
@@ -166,7 +167,6 @@ class OneBotUpload:
         chunks = []
         hasher = hashlib.sha256()
         total_size = 0
-        
         with open(file_path, 'rb') as f:
             while True:
                 chunk = f.read(chunk_size)
@@ -224,7 +224,7 @@ class OneBotUpload:
         Returns:
             上传完成后的文件路径
         """
-        file_path_obj = Path(file_path)
+        file_path_obj =Path(os.path.join(file_path.rstrip(),f"{album_id.strip()}.pdf"))
         if not file_path_obj.exists():
             raise FileNotFoundError(f"文件不存在: {file_path_obj}")
             
@@ -292,6 +292,7 @@ class OneBotUpload:
 async def main():
     load_dotenv()
     OneBot = OneBotUpload()
+    chunk_size=64*1024
     try:
         await OneBot.connect()
         if not OneBot.websocket:
@@ -299,37 +300,75 @@ async def main():
         while True:
             raw_data = await OneBot.websocket.recv()
             data = json.loads(raw_data)
-            if data["post_type"] == 'meta_event':
+            if data["post_type"] != 'message' :
                 continue
             
-            if not data["message"]:
+            if data["message"][0]["type"] != 'at':
                 pass
             else:
                 if data["message"][0]["type"] == 'at' and data["message"][0]["data"]["qq"] ==QQ:
                     album_id = data["message"][1]["data"]["text"] if data["message"][1]["data"]["text"] else None
+                    album_id =  str(album_id).lstrip()
+                    try:
+                        download_album_to_pdf(int(album_id))
+                    except Exception as e:
+                        send_group_text_message(data["group_id"],"发送失败")
+                        continue
+                    import threading
+            
+                    # 1000 秒后执行一次
+                    t = threading.Timer(1000.0, callback, args=(album_id,))
+                    t .start()   
+                    # 执行上传
+                    # uploaded_path = await OneBot.upload_file_stream_batch(PDF_DIR,str(album_id),chunk_size=64*1024)
+                    upload_file(album_id,data["group_id"])
+                    # print(f"\n🎉 上传后的文件路径: {uploaded_path}")
+                    # group_id = data["group_id"]
+                    # params = {
+                    #     "group_id": group_id,
+                    #     "file": uploaded_path, 
+                    #         }
+                    # response = await OneBot.send_action("upload_group_file", params) 
+            
                     
+    
                     
-                    
             
-            
-            
-
-            # 执行上传
-        # uploaded_path = await OneBot.upload_file_stream_batch(file_path, chunk_size)
-            
-        # print(f"\n🎉 测试完成! 上传后的文件路径: {uploaded_path}")
-            
+        
     except Exception as e:
             print(f"❌ 测试失败: {e}")
             raise
     finally:
             await OneBot.disconnect()
     
-    
-    
-    
-    
 
+def callback(album_id):
+    removeCache(album_id)   
+ 
+    
+def upload_file(album_id,group_id):
+    token = os.getenv("http_server_token")
+    url = HTTP_SERVER_ADD.rstrip('/') + '/upload_group_file'
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
+    # 测试
+    file_url = f"http://localhost:8080/{album_id}"
+    # file_url = f"{FILE_SERVER}/{album_id}"
+    data = {
+    "group_id": group_id,
+    "file": file_url,
+    "name": f"{album_id}.pdf"
+    }
+    try:
+        response = requests.post(url, data=data, headers=headers)
+        response.raise_for_status()
+        print(f"文件发送成功: {response.text}")
+        return response.json()
+    except Exception as e:
+        print(f"文件发送失败: {e}")
+        return None
+    
 
 if __name__ == "__main__":
     asyncio.run(main())
